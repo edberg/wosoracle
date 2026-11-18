@@ -5,11 +5,16 @@ A stateless Streamable HTTP MCP server for the WoS Oracle v1 API, designed for V
 ## Setup
 
 1. Install Node.js 20 or newer and run `npm install`.
-2. Set `API_TOKEN` to your WoS Oracle API token and `MCP_ACCESS_TOKEN` to a separate, long random secret. Set both as sensitive Vercel environment variables; never commit them.
-3. Run `npm run dev`, or import this repository as a Vercel project and deploy it.
-4. Connect an MCP client to `https://<your-domain>/api/mcp`, sending `Authorization: Bearer <MCP_ACCESS_TOKEN>` as an HTTP header. Locally use `http://localhost:3000/api/mcp`.
+2. Create a GitHub OAuth App. Set its callback URL to `https://wosoracle-mcp.vercel.app/oauth/callback` and request the `read:user` and `user:email` scopes.
+3. Set these sensitive Vercel environment variables; never commit them:
+   - `API_TOKEN`: your WoS Oracle API token.
+   - `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`: the GitHub OAuth App credentials.
+   - `MCP_JWT_SECRET` and `MCP_AUTH_CODE_SECRET`: separate random secrets, each at least 32 bytes.
+   - `MCP_PUBLIC_URL`: the canonical MCP origin, normally `https://wosoracle-mcp.vercel.app`.
+4. Run `npm run dev`, or import this repository as a Vercel project and deploy it. Disable Vercel Deployment Protection on the public deployment so ChatGPT can reach the OAuth metadata and MCP endpoints.
+5. Connect an MCP client to `https://<your-domain>/api/mcp` and select OAuth when prompted. Locally use `http://localhost:3000/api/mcp` with a local GitHub callback URL.
 
-Anyone with the MCP access token can use the configured WoS Oracle account and its quota, including operations that request renders or cards. Keep the endpoint secret and rotate the access token if exposed. This simple bearer-token access control does not provide OAuth or per-user accounts; clients must support custom headers.
+GitHub authenticates the user, and this server then issues a short-lived MCP access token with the MCP resource as its audience. The server currently uses one configured WoS Oracle API token, so all authenticated users share that upstream account and quota.
 
 Every upstream request counts toward the account's daily quota. Reuse results and avoid polling; the server does not coordinate rate limits or cache across Vercel instances. On HTTP 429, it reports `Retry-After` so clients can wait before retrying. It never automatically retries, including 401, 402 and 404. Card and render status responses may include their own retry intervals. The `cached` options request stored upstream data but still consume quota.
 
