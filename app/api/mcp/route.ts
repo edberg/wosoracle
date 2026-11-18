@@ -1,6 +1,7 @@
 import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
-import { timingSafeEqual } from "node:crypto";
+import { withMcpAuth } from "mcp-handler";
+import { MCP_RESOURCE, MCP_SCOPE, verifyAccessToken } from "../../lib/oauth";
 
 const id = z.string().regex(/^\d+$/).describe("Chief ID, digits only");
 const integer = z.number().int().nonnegative();
@@ -62,17 +63,17 @@ const handler = createMcpHandler((server) => {
   }
 });
 
-function authorized(request: Request) {
-  const secret = process.env.MCP_ACCESS_TOKEN;
-  const supplied = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!secret || !supplied) return false;
-  const a = Buffer.from(secret), b = Buffer.from(supplied);
-  return a.length === b.length && timingSafeEqual(a,b);
-}
-async function endpoint(request: Request) {
-  if (!authorized(request)) return new Response("Unauthorized", {status:401, headers:{"WWW-Authenticate":"Bearer"}});
-  return handler(request);
-}
+const endpoint = withMcpAuth(async (request) => handler(request), async (_request, bearerToken) => {
+  if (!bearerToken) return undefined;
+  try {
+    const { payload } = await verifyAccessToken(bearerToken);
+    if (typeof payload.sub !== "string" || typeof payload.exp !== "number") return undefined;
+    const scopes = typeof payload.scope === "string" ? payload.scope.split(" ").filter(Boolean) : [];
+    return { token: bearerToken, clientId: payload.sub, scopes, expiresAt: payload.exp };
+  } catch {
+    return undefined;
+  }
+}, { required: true, requiredScopes: [MCP_SCOPE], resourceUrl: MCP_RESOURCE });
 export {endpoint as GET, endpoint as POST, endpoint as DELETE};
 
 
